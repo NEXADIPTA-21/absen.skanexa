@@ -58,8 +58,9 @@ export default function AdminStudentsPage() {
           setClassInput(data.classes[0].id);
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setError(e?.message || 'Gagal mengambil data siswa.');
     }
   };
 
@@ -69,13 +70,13 @@ export default function AdminStudentsPage() {
       if (selectedClass !== 'all') url += `classId=${selectedClass}&`;
       if (search.trim()) url += `search=${encodeURIComponent(search.trim())}&`;
 
-      const res = await fetch(url);
+      const res = await fetch(url, { method: 'GET', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       const data = await res.json();
-      if (data.success) {
-        setStudents(data.students);
-      }
-    } catch (e) {
+      if (!res.ok || !data.success) throw new Error(data.message || 'Gagal mengambil data siswa.');
+      setStudents(Array.isArray(data.students) ? data.students : []);
+    } catch (e: any) {
       console.error(e);
+      setError(e?.message || 'Gagal mengambil data siswa.');
     } finally {
       setLoading(false);
     }
@@ -132,7 +133,7 @@ export default function AdminStudentsPage() {
       if (!res.ok || !data.success) throw new Error(data.message || 'Gagal menambahkan siswa.');
 
       setAddModalOpen(false);
-      fetchStudents();
+      await fetchStudents();
     } catch (err: any) {
       setError(err.message);
     } finally {

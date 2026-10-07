@@ -26,13 +26,13 @@ export default function AdminSecurityPage() {
 
   const fetchOfficers = async () => {
     try {
-      const res = await fetch('/api/admin/security');
+      const res = await fetch('/api/admin/security', { method: 'GET', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       const data = await res.json();
-      if (data.success) {
-        setOfficers(data.officers);
-      }
-    } catch (e) {
+      if (!res.ok || !data.success) throw new Error(data.message || 'Gagal mengambil data petugas.');
+      setOfficers(Array.isArray(data.officers) ? data.officers : []);
+    } catch (e: any) {
       console.error(e);
+      setError(e?.message || 'Gagal mengambil data petugas.');
     } finally {
       setLoading(false);
     }
@@ -73,7 +73,10 @@ export default function AdminSecurityPage() {
       if (!res.ok || !data.success) throw new Error(data.message || 'Gagal membuat akun.');
 
       setAddModalOpen(false);
-      fetchOfficers();
+      setNameInput('');
+      setUsernameInput('');
+      setPasswordInput('security123');
+      await fetchOfficers();
     } catch (err: any) {
       setError(err.message);
     } finally {

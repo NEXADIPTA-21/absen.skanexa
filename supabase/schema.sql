@@ -18,6 +18,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username VARCHAR(64) UNIQUE NOT NULL,
+    name VARCHAR(100),
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL
         CHECK (role IN ('admin', 'student', 'security')),
@@ -26,6 +27,12 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+
+-- Patch kompatibilitas jika tabel users sudah dibuat sebelumnya
+ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+UPDATE users SET username = LOWER(TRIM(username)) WHERE username IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_unique ON users(username);
 
 
 -- ==============================================================================
@@ -225,12 +232,14 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO users (
     username,
+    name,
     password_hash,
     role,
     status
 )
 VALUES (
     'admin',
+    'Administrator SKANEXA',
     '$2a$10$Lsmc6Y9bK4T9uBvhqD2RnuU/Wc191a2oIbgI8w4l9v3hNcf3Q7Hl2',
     'admin',
     'active'
@@ -249,12 +258,14 @@ ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO users (
     username,
+    name,
     password_hash,
     role,
     status
 )
 VALUES (
     'security01',
+    'Petugas Keamanan',
     '$2a$10$fG6mH1J7Zk5Nq8RvT3YpLuX2B1C9v0W8E4a7S6d5F2g1H3j4K5l6M',
     'security',
     'active'

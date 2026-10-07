@@ -217,13 +217,29 @@ function writeLocalDb(data: LocalDatabase): void {
 // USER OPERATIONS
 // -----------------------------------------------------------------------------
 export async function getUserByUsername(username: string): Promise<User | null> {
+  const normalizedUsername = username.trim().toLowerCase();
+  if (!normalizedUsername) return null;
+
   const sb = getSupabase();
   if (sb) {
-    const { data } = await sb.from('users').select('*').eq('username', username.trim()).single();
-    return data || null;
+    const { data, error } = await sb
+      .from('users')
+      .select('*')
+      .eq('username', normalizedUsername)
+      .maybeSingle();
+
+    if (error) {
+      console.error('getUserByUsername Supabase error:', error);
+      throw new Error(`Gagal mengambil user dari database: ${error.message}`);
+    }
+
+    return (data as User | null) || null;
   }
+
   const db = readLocalDb();
-  return db.users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase()) || null;
+  return db.users.find(
+    (u) => u.username.trim().toLowerCase() === normalizedUsername
+  ) || null;
 }
 
 export async function getUserById(id: string): Promise<User | null> {
@@ -240,9 +256,14 @@ export async function createUser(
   user: Omit<User, 'id' | 'created_at' | 'updated_at'>
 ): Promise<User> {
   const now = new Date().toISOString();
-  const id = `u-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const normalizedUsername = user.username.trim().toLowerCase();
+  const normalizedName = (user.name || normalizedUsername).trim();
+
+  const id = `u-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
   const newUser: User = {
     ...user,
+    username: normalizedUsername,
+    name: normalizedName,
     id,
     created_at: now,
     updated_at: now,
@@ -250,17 +271,30 @@ export async function createUser(
 
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('users').insert({
-      username: user.username,
-      password_hash: user.password_hash,
-      role: user.role,
-      status: user.status,
-    }).select().single();
-    if (error) throw error;
-    return data;
+    const { data, error } = await sb
+      .from('users')
+      .insert({
+        username: normalizedUsername,
+        password_hash: user.password_hash,
+        role: user.role,
+        status: user.status,
+        name: normalizedName,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('createUser Supabase error:', error);
+      throw new Error(`Gagal menyimpan akun ke Supabase: ${error.message}`);
+    }
+    if (!data) throw new Error('Supabase tidak mengembalikan data user setelah insert.');
+    return data as User;
   }
 
   const db = readLocalDb();
+  if (db.users.some((u) => u.username.trim().toLowerCase() === normalizedUsername)) {
+    throw new Error('Username sudah digunakan.');
+  }
   db.users.push(newUser);
   writeLocalDb(db);
   return newUser;
@@ -269,9 +303,19 @@ export async function createUser(
 export async function updateUserPassword(id: string, password_hash: string): Promise<boolean> {
   const sb = getSupabase();
   if (sb) {
-    const { error } = await sb.from('users').update({ password_hash, updated_at: new Date().toISOString() }).eq('id', id);
-    return !error;
+    const { data, error } = await sb
+      .from('users')
+      .update({ password_hash, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      console.error('updateUserPassword Supabase error:', error);
+      throw new Error(`Gagal mengubah password: ${error.message}`);
+    }
+    return Boolean(data);
   }
+
   const db = readLocalDb();
   const user = db.users.find((u) => u.id === id);
   if (!user) return false;
@@ -284,9 +328,19 @@ export async function updateUserPassword(id: string, password_hash: string): Pro
 export async function updateUserStatus(id: string, status: UserStatus): Promise<boolean> {
   const sb = getSupabase();
   if (sb) {
-    const { error } = await sb.from('users').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
-    return !error;
+    const { data, error } = await sb
+      .from('users')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      console.error('updateUserStatus Supabase error:', error);
+      throw new Error(`Gagal mengubah status akun: ${error.message}`);
+    }
+    return Boolean(data);
   }
+
   const db = readLocalDb();
   const user = db.users.find((u) => u.id === id);
   if (!user) return false;
@@ -299,12 +353,24 @@ export async function updateUserStatus(id: string, status: UserStatus): Promise<
 export async function getSecurityOfficers(): Promise<User[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data } = await sb.from('users').select('*').eq('role', 'security').order('created_at', { ascending: false });
-    return data || [];
+    const { data, error } = await sb
+      .from('users')
+      .select('*')
+      .eq('role', 'security')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('getSecurityOfficers Supabase error:', error);
+      throw new Error(`Gagal mengambil data petugas: ${error.message}`);
+    }
+    return (data || []) as User[];
   }
+
   const db = readLocalDb();
   return db.users.filter((u) => u.role === 'security');
 }
+
+
 
 // -----------------------------------------------------------------------------
 // CLASS OPERATIONS
@@ -376,59 +442,132 @@ export async function updateClass(id: string, name: string, status: UserStatus):
 // STUDENT OPERATIONS
 // -----------------------------------------------------------------------------
 export async function getStudents(filters?: { classId?: string; search?: string }): Promise<Student[]> {
+  const sb = getSupabase();
+
+  if (sb) {
+    let query = sb
+      .from('students')
+      .select(`
+        id,
+        user_id,
+        class_id,
+        name,
+        qr_token,
+        status,
+        created_at,
+        updated_at,
+        classes(name),
+        users(username)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (filters?.classId && filters.classId !== 'all') {
+      query = query.eq('class_id', filters.classId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('getStudents Supabase error:', error);
+      throw new Error(`Gagal mengambil data siswa: ${error.message}`);
+    }
+
+    let students: Student[] = (data || []).map((row: any) => ({
+      id: row.id,
+      user_id: row.user_id,
+      class_id: row.class_id,
+      name: row.name,
+      qr_token: row.qr_token,
+      status: row.status,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      class_name: row.classes?.name || 'Belum ada kelas',
+      username: row.users?.username || '',
+    }));
+
+    if (filters?.search) {
+      const search = filters.search.trim().toLowerCase();
+      students = students.filter((student) =>
+        student.name.toLowerCase().includes(search) ||
+        (student.username || '').toLowerCase().includes(search) ||
+        student.qr_token.toLowerCase().includes(search)
+      );
+    }
+
+    return students;
+  }
+
   const db = readLocalDb();
-  let students = db.students.map((s) => {
+  let students: Student[] = db.students.map((s) => {
     const c = db.classes.find((cl) => cl.id === s.class_id);
     const u = db.users.find((usr) => usr.id === s.user_id);
-    return {
-      ...s,
-      class_name: c?.name || 'Belum ada kelas',
-      username: u?.username || '',
-    };
+    return { ...s, class_name: c?.name || 'Belum ada kelas', username: u?.username || '' };
   });
 
   if (filters?.classId && filters.classId !== 'all') {
     students = students.filter((s) => s.class_id === filters.classId);
   }
-
   if (filters?.search) {
-    const query = filters.search.toLowerCase();
-    students = students.filter(
-      (s) =>
-        s.name.toLowerCase().includes(query) ||
-        (s.username && s.username.toLowerCase().includes(query)) ||
-        s.qr_token.toLowerCase().includes(query)
+    const search = filters.search.trim().toLowerCase();
+    students = students.filter((s) =>
+      s.name.toLowerCase().includes(search) ||
+      (s.username || '').toLowerCase().includes(search) ||
+      s.qr_token.toLowerCase().includes(search)
     );
   }
-
   return students;
 }
 
 export async function getStudentById(id: string): Promise<Student | null> {
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb
+      .from('students')
+      .select('id, user_id, class_id, name, qr_token, status, created_at, updated_at, classes(name), users(username)')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) {
+      console.error('getStudentById Supabase error:', error);
+      throw new Error(`Gagal mengambil data siswa: ${error.message}`);
+    }
+    if (!data) return null;
+    const row: any = data;
+    return { ...row, class_name: row.classes?.name || 'Belum ada kelas', username: row.users?.username || '' } as Student;
+  }
+
   const db = readLocalDb();
   const s = db.students.find((item) => item.id === id);
   if (!s) return null;
   const c = db.classes.find((cl) => cl.id === s.class_id);
   const u = db.users.find((usr) => usr.id === s.user_id);
-  return {
-    ...s,
-    class_name: c?.name || 'Belum ada kelas',
-    username: u?.username || '',
-  };
+  return { ...s, class_name: c?.name || 'Belum ada kelas', username: u?.username || '' };
 }
 
 export async function getStudentByUserId(userId: string): Promise<Student | null> {
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb
+      .from('students')
+      .select('id, user_id, class_id, name, qr_token, status, created_at, updated_at, classes(name), users(username)')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) {
+      console.error('getStudentByUserId Supabase error:', error);
+      throw new Error(`Gagal mengambil data siswa: ${error.message}`);
+    }
+    if (!data) return null;
+    const row: any = data;
+    return { ...row, class_name: row.classes?.name || 'Belum ada kelas', username: row.users?.username || '' } as Student;
+  }
+
   const db = readLocalDb();
   const s = db.students.find((item) => item.user_id === userId);
   if (!s) return null;
   const c = db.classes.find((cl) => cl.id === s.class_id);
   const u = db.users.find((usr) => usr.id === s.user_id);
-  return {
-    ...s,
-    class_name: c?.name || 'Belum ada kelas',
-    username: u?.username || '',
-  };
+  return { ...s, class_name: c?.name || 'Belum ada kelas', username: u?.username || '' };
 }
+
+
 
 /**
  * Ultra-fast lookup directly by unique qr_token.
@@ -469,26 +608,26 @@ export async function createStudent(data: {
   class_id: string;
 }): Promise<Student> {
   const now = new Date().toISOString();
-  const userId = `u-std-${Date.now()}`;
-  const studentId = `s-${Date.now()}`;
+  const normalizedName = data.name.trim();
+  const normalizedUsername = data.username.trim().toLowerCase();
   const qrToken = generateQrToken();
 
   const newUser: User = {
-    id: userId,
-    username: data.username.trim().toLowerCase(),
+    id: `u-std-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    username: normalizedUsername,
     password_hash: data.password_hash,
     role: 'student',
     status: 'active',
-    name: data.name.trim(),
+    name: normalizedName,
     created_at: now,
     updated_at: now,
   };
 
   const newStudent: Student = {
-    id: studentId,
-    user_id: userId,
+    id: `s-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    user_id: newUser.id,
     class_id: data.class_id,
-    name: data.name.trim(),
+    name: normalizedName,
     qr_token: qrToken,
     status: 'active',
     created_at: now,
@@ -497,32 +636,60 @@ export async function createStudent(data: {
 
   const sb = getSupabase();
   if (sb) {
-    const { data: createdUser, error: userErr } = await sb.from('users').insert({
-      username: newUser.username,
-      password_hash: newUser.password_hash,
-      role: 'student',
-      status: 'active',
-    }).select().single();
-    if (userErr) throw userErr;
+    const { data: createdUser, error: userErr } = await sb
+      .from('users')
+      .insert({
+        username: normalizedUsername,
+        password_hash: data.password_hash,
+        role: 'student',
+        status: 'active',
+        name: normalizedName,
+      })
+      .select('*')
+      .single();
 
-    const { data: createdStudent, error: stdErr } = await sb.from('students').insert({
-      user_id: createdUser.id,
-      class_id: data.class_id,
-      name: data.name.trim(),
-      qr_token: qrToken,
-      status: 'active',
-    }).select().single();
-    if (stdErr) throw stdErr;
+    if (userErr) {
+      console.error('createStudent user error:', userErr);
+      throw new Error(`Gagal membuat akun siswa: ${userErr.message}`);
+    }
 
-    return createdStudent;
+    const { data: createdStudent, error: studentErr } = await sb
+      .from('students')
+      .insert({
+        user_id: createdUser.id,
+        class_id: data.class_id,
+        name: normalizedName,
+        qr_token: qrToken,
+        status: 'active',
+      })
+      .select('*')
+      .single();
+
+    if (studentErr) {
+      console.error('createStudent student error:', studentErr);
+      await sb.from('users').delete().eq('id', createdUser.id);
+      throw new Error(`Gagal membuat data siswa: ${studentErr.message}`);
+    }
+
+    if (!createdStudent) {
+      await sb.from('users').delete().eq('id', createdUser.id);
+      throw new Error('Data siswa tidak dikembalikan oleh Supabase.');
+    }
+
+    return createdStudent as Student;
   }
 
   const db = readLocalDb();
+  if (db.users.some((u) => u.username.trim().toLowerCase() === normalizedUsername)) {
+    throw new Error('Username sudah digunakan.');
+  }
   db.users.push(newUser);
   db.students.push(newStudent);
   writeLocalDb(db);
   return newStudent;
 }
+
+
 
 export async function updateStudent(
   id: string,
@@ -530,13 +697,37 @@ export async function updateStudent(
 ): Promise<boolean> {
   const sb = getSupabase();
   if (sb) {
-    const { error } = await sb.from('students').update({
-      name: data.name.trim(),
-      class_id: data.class_id,
-      status: data.status,
-      updated_at: new Date().toISOString(),
-    }).eq('id', id);
-    return !error;
+    const { data: student, error: findError } = await sb
+      .from('students')
+      .select('user_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (findError) throw new Error(`Gagal mencari siswa: ${findError.message}`);
+    if (!student) return false;
+
+    const now = new Date().toISOString();
+    const { error } = await sb
+      .from('students')
+      .update({
+        name: data.name.trim(),
+        class_id: data.class_id,
+        status: data.status,
+        updated_at: now,
+      })
+      .eq('id', id);
+    if (error) throw new Error(`Gagal memperbarui siswa: ${error.message}`);
+
+    const { error: userError } = await sb
+      .from('users')
+      .update({
+        name: data.name.trim(),
+        status: data.status,
+        updated_at: now,
+      })
+      .eq('id', student.user_id);
+    if (userError) throw new Error(`Gagal memperbarui akun siswa: ${userError.message}`);
+
+    return true;
   }
 
   const db = readLocalDb();
@@ -546,8 +737,6 @@ export async function updateStudent(
   s.class_id = data.class_id;
   s.status = data.status;
   s.updated_at = new Date().toISOString();
-
-  // Also update user status if student is disabled
   const u = db.users.find((usr) => usr.id === s.user_id);
   if (u) {
     u.status = data.status;
@@ -556,6 +745,8 @@ export async function updateStudent(
   writeLocalDb(db);
   return true;
 }
+
+
 
 export async function regenerateStudentQr(studentId: string): Promise<string> {
   const newQr = generateQrToken();
@@ -917,12 +1108,28 @@ export async function logAudit(
 }
 
 export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb
+      .from('audit_logs')
+      .select('*, users(name, username)')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.error('getAuditLogs Supabase error:', error);
+      throw new Error(`Gagal mengambil audit log: ${error.message}`);
+    }
+    return (data || []).map((row: any) => ({
+      ...row,
+      user_name: row.users?.name || row.users?.username || (row.user_id ? 'User' : 'System'),
+    })) as AuditLog[];
+  }
+
   const db = readLocalDb();
   return db.audit_logs.slice(0, limit).map((log) => {
     const user = db.users.find((u) => u.id === log.user_id);
-    return {
-      ...log,
-      user_name: user?.name || user?.username || (log.user_id ? 'User' : 'System'),
-    };
+    return { ...log, user_name: user?.name || user?.username || (log.user_id ? 'User' : 'System') };
   });
 }
+
+
