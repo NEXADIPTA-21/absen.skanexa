@@ -17,6 +17,11 @@ import {
   Download,
   X,
   AlertTriangle,
+  Upload,
+  Trash2,
+  CheckSquare,
+  Square,
+  FileText,
 } from 'lucide-react';
 import { Student, ClassItem } from '@/lib/types';
 
@@ -32,6 +37,14 @@ export default function AdminStudentsPage() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [resetPassModalOpen, setResetPassModalOpen] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkDefaultPassword, setBulkDefaultPassword] = useState('student123');
+  const [bulkPreview, setBulkPreview] = useState<Array<Record<string, string>>>([]);
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
 
   // Active student for modals
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
@@ -58,9 +71,8 @@ export default function AdminStudentsPage() {
           setClassInput(data.classes[0].id);
         }
       }
-    } catch (e: any) {
+    } catch (e) {
       console.error(e);
-      setError(e?.message || 'Gagal mengambil data siswa.');
     }
   };
 
@@ -70,13 +82,13 @@ export default function AdminStudentsPage() {
       if (selectedClass !== 'all') url += `classId=${selectedClass}&`;
       if (search.trim()) url += `search=${encodeURIComponent(search.trim())}&`;
 
-      const res = await fetch(url, { method: 'GET', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Gagal mengambil data siswa.');
-      setStudents(Array.isArray(data.students) ? data.students : []);
-    } catch (e: any) {
+      if (data.success) {
+        setStudents(data.students);
+      }
+    } catch (e) {
       console.error(e);
-      setError(e?.message || 'Gagal mengambil data siswa.');
     } finally {
       setLoading(false);
     }
@@ -133,7 +145,7 @@ export default function AdminStudentsPage() {
       if (!res.ok || !data.success) throw new Error(data.message || 'Gagal menambahkan siswa.');
 
       setAddModalOpen(false);
-      await fetchStudents();
+      fetchStudents();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -251,6 +263,136 @@ export default function AdminStudentsPage() {
     }
   };
 
+  const allSelected = students.length > 0 && selectedIds.length === students.length;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? [] : students.map((s) => s.id));
+  };
+
+  const parseCsv = (text: string): Array<Record<string, string>> => {
+    const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < clean.length; i++) {
+      const ch = clean[i];
+      const next = clean[i + 1];
+      if (ch === '"') {
+        if (quoted && next === '"') { cell += '"'; i++; }
+        else quoted = !quoted;
+      } else if (ch === ',' && !quoted) {
+        row.push(cell.trim()); cell = '';
+      } else if (ch === '\n' && !quoted) {
+        row.push(cell.trim()); cell = '';
+        if (row.some((v) => v !== '')) rows.push(row);
+        row = [];
+      } else {
+        cell += ch;
+      }
+    }
+    row.push(cell.trim());
+    if (row.some((v) => v !== '')) rows.push(row);
+    if (rows.length < 2) return [];
+    const headers = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
+    return rows.slice(1).map((values) => Object.fromEntries(headers.map((h, i) => [h, values[i] || ''])));
+  };
+
+  const handleBulkFile = async (file: File | null) => {
+    setBulkFile(file);
+    setBulkErrors([]);
+    setBulkPreview([]);
+    if (!file) return;
+    if (!/\.(csv|txt)$/i.test(file.name)) {
+      setBulkErrors(['Format file harus CSV (.csv) atau TXT dengan pemisah koma.']);
+      return;
+    }
+    const text = await file.text();
+    const rows = parseCsv(text);
+    if (!rows.length) {
+      setBulkErrors(['Data CSV tidak ditemukan. Gunakan header: nama,username,password,kelas']);
+      return;
+    }
+    setBulkPreview(rows.slice(0, 8));
+  };
+
+  const downloadTemplate = () => {
+    const csv = 'nama,username,password,kelas\nAhmad Fauzan,ahmad.fauzan,student123,XII RPL 1\nBudi Santoso,budi.santoso,student123,XII RPL 1\n';
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template-data-siswa.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkUpload = async () => {
+    if (!bulkFile) { setBulkErrors(['Pilih file CSV terlebih dahulu.']); return; }
+    const text = await bulkFile.text();
+    const rows = parseCsv(text);
+    if (!rows.length) { setBulkErrors(['CSV kosong atau format header salah.']); return; }
+    if (rows.length > 200) { setBulkErrors(['Maksimal 200 siswa per upload.']); return; }
+    if (bulkDefaultPassword.length < 6) { setBulkErrors(['Password default minimal 6 karakter.']); return; }
+
+    setBulkUploading(true);
+    setBulkErrors([]);
+    try {
+      const res = await fetch('/api/admin/students/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows, default_password: bulkDefaultPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Gagal mengimport data siswa.');
+      }
+      const rowErrors = (data.errors || []).map((e: any) => `Baris ${e.row}: ${e.message}`);
+      if (rowErrors.length) {
+        setBulkErrors(rowErrors);
+      } else {
+        setBulkModalOpen(false);
+      }
+      setBulkFile(null);
+      setBulkPreview([]);
+      setSelectedIds([]);
+      await fetchStudents();
+      await fetchClasses();
+      alert(data.message || 'Import berhasil.');
+    } catch (err: any) {
+      setBulkErrors([err.message || 'Koneksi bermasalah.']);
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Hapus ${selectedIds.length} siswa yang dipilih?\n\nData akun, QR, dan riwayat presensi siswa yang dihapus juga akan ikut terhapus. Tindakan ini tidak dapat dibatalkan.`)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/admin/students', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Gagal menghapus siswa.');
+      setSelectedIds([]);
+      await fetchStudents();
+      await fetchClasses();
+      alert(data.message || 'Siswa berhasil dihapus.');
+    } catch (err: any) {
+      setError(err.message || 'Gagal menghapus siswa.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Print QR Card
   const handlePrintQr = () => {
     window.print();
@@ -266,13 +408,32 @@ export default function AdminStudentsPage() {
             Kelola identitas siswa, akun login, dan QR Code presensi unik
           </p>
         </div>
-        <button
-          onClick={handleOpenAdd}
-          className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah Siswa Baru</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedIds.length > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{deleting ? 'Menghapus...' : `Hapus ${selectedIds.length}`}</span>
+            </button>
+          )}
+          <button
+            onClick={() => { setBulkModalOpen(true); setBulkErrors([]); }}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload Data Siswa</span>
+          </button>
+          <button
+            onClick={handleOpenAdd}
+            className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Siswa Baru</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -311,6 +472,11 @@ export default function AdminStudentsPage() {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100">
               <tr>
+                <th className="py-3 px-4 w-10">
+                  <button onClick={toggleSelectAll} type="button" title={allSelected ? 'Batalkan semua' : 'Pilih semua'}>
+                    {allSelected ? <CheckSquare className="w-4 h-4 text-sky-600" /> : <Square className="w-4 h-4 text-slate-400" />}
+                  </button>
+                </th>
                 <th className="py-3 px-4">Nama Siswa</th>
                 <th className="py-3 px-4">Username</th>
                 <th className="py-3 px-4">Kelas</th>
@@ -322,13 +488,18 @@ export default function AdminStudentsPage() {
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
                     Memuat data siswa...
                   </td>
                 </tr>
               ) : students.length > 0 ? (
                 students.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/60 transition">
+                  <tr key={s.id} className={`hover:bg-slate-50/60 transition ${selectedIds.includes(s.id) ? 'bg-sky-50/60' : ''}`}>
+                    <td className="py-3.5 px-4">
+                      <button onClick={() => toggleSelect(s.id)} type="button">
+                        {selectedIds.includes(s.id) ? <CheckSquare className="w-4 h-4 text-sky-600" /> : <Square className="w-4 h-4 text-slate-400" />}
+                      </button>
+                    </td>
                     <td className="py-3.5 px-4 font-bold text-slate-900">{s.name}</td>
                     <td className="py-3.5 px-4 font-mono text-slate-600">{s.username}</td>
                     <td className="py-3.5 px-4 font-medium">{s.class_name}</td>
@@ -377,7 +548,7 @@ export default function AdminStudentsPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
                     Tidak ada data siswa ditemukan.
                   </td>
                 </tr>
@@ -386,6 +557,65 @@ export default function AdminStudentsPage() {
           </table>
         </div>
       </div>
+
+      {/* Modal: Upload Data Siswa */}
+      {bulkModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setBulkModalOpen(false)} className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-base font-bold text-slate-900 mb-1">Upload Data Siswa</h2>
+            <p className="text-xs text-slate-500 mb-4">Import banyak siswa sekaligus menggunakan file CSV.</p>
+
+            <div className="p-3 mb-4 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-800 space-y-1">
+              <p className="font-bold">Format CSV:</p>
+              <p><code>nama,username,password,kelas</code></p>
+              <p>Password boleh dikosongkan; sistem akan memakai password default.</p>
+              <p>Nama kelas harus sudah dibuat di menu <strong>Manajemen Kelas</strong>.</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button type="button" onClick={downloadTemplate} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5" /> Download Template
+              </button>
+              <label className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer">
+                <FileText className="w-3.5 h-3.5" /> Pilih CSV
+                <input type="file" accept=".csv,.txt,text/csv,text/plain" className="hidden" onChange={(e) => handleBulkFile(e.target.files?.[0] || null)} />
+              </label>
+              {bulkFile && <span className="self-center text-xs font-medium text-slate-600">{bulkFile.name}</span>}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-700 mb-1">Password Default</label>
+              <input type="text" value={bulkDefaultPassword} onChange={(e) => setBulkDefaultPassword(e.target.value)} className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono" />
+            </div>
+
+            {bulkPreview.length > 0 && (
+              <div className="mb-4 border border-slate-200 rounded-xl overflow-x-auto">
+                <div className="px-3 py-2 bg-slate-50 text-xs font-bold text-slate-700">Preview maksimal 8 baris</div>
+                <table className="w-full text-xs">
+                  <thead className="bg-white border-b border-slate-100"><tr><th className="p-2 text-left">Nama</th><th className="p-2 text-left">Username</th><th className="p-2 text-left">Kelas</th></tr></thead>
+                  <tbody>{bulkPreview.map((r, i) => <tr key={i} className="border-b border-slate-50"><td className="p-2">{r.nama || '-'}</td><td className="p-2 font-mono">{r.username || '-'}</td><td className="p-2">{r.kelas || '-'}</td></tr>)}</tbody>
+                </table>
+              </div>
+            )}
+
+            {bulkErrors.length > 0 && (
+              <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl space-y-1 max-h-40 overflow-y-auto">
+                {bulkErrors.map((item, i) => <p key={i}>{item}</p>)}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => setBulkModalOpen(false)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs">Batal</button>
+              <button type="button" onClick={handleBulkUpload} disabled={bulkUploading || !bulkFile} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs disabled:opacity-50">
+                {bulkUploading ? 'Mengimport...' : 'Import Data Siswa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal 1: Tambah Siswa */}
       {addModalOpen && (

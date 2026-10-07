@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Users, Plus, Edit2, CheckCircle2, XCircle, Search, RefreshCw, X } from 'lucide-react';
+import { Users, Plus, Edit2, CheckCircle2, XCircle, Search, RefreshCw, X, Trash2, CheckSquare, Square } from 'lucide-react';
 import { ClassItem } from '@/lib/types';
 
 export default function AdminClassesPage() {
@@ -13,10 +13,12 @@ export default function AdminClassesPage() {
   const [statusInput, setStatusInput] = useState<'active' | 'disabled'>('active');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchClasses = async () => {
     try {
-      const res = await fetch('/api/admin/classes');
+      const res = await fetch('/api/admin/classes', { cache: 'no-store' });
       const data = await res.json();
       if (data.success) {
         setClasses(data.classes);
@@ -88,6 +90,45 @@ export default function AdminClassesPage() {
     }
   };
 
+  const allSelected = classes.length > 0 && selectedIds.length === classes.length;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? [] : classes.map((c) => c.id));
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    const selected = classes.filter((c) => selectedIds.includes(c.id));
+    const withStudents = selected.filter((c) => (c.student_count || 0) > 0);
+    const warning = withStudents.length > 0
+      ? `\n\n${withStudents.length} kelas masih memiliki siswa. Siswa TIDAK akan dihapus, tetapi kelasnya akan menjadi "Belum ada kelas".`
+      : '';
+
+    if (!confirm(`Hapus ${selectedIds.length} kelas yang dipilih?${warning}\n\nTindakan ini tidak dapat dibatalkan.`)) return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/admin/classes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Gagal menghapus kelas.');
+      setSelectedIds([]);
+      await fetchClasses();
+      alert(data.message || 'Kelas berhasil dihapus.');
+    } catch (err: any) {
+      setError(err.message || 'Gagal menghapus kelas.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -98,13 +139,25 @@ export default function AdminClassesPage() {
             Kelola daftar kelas aktif dan pembagian rombel siswa SKANEXA
           </p>
         </div>
-        <button
-          onClick={handleOpenAdd}
-          className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah Kelas Baru</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedIds.length > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{deleting ? 'Menghapus...' : `Hapus ${selectedIds.length}`}</span>
+            </button>
+          )}
+          <button
+            onClick={handleOpenAdd}
+            className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Kelas Baru</span>
+          </button>
+        </div>
       </div>
 
       {/* Classes List */}
@@ -113,6 +166,11 @@ export default function AdminClassesPage() {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100">
               <tr>
+                <th className="py-3 px-4 w-10">
+                  <button onClick={toggleSelectAll} type="button" title={allSelected ? 'Batalkan semua' : 'Pilih semua'}>
+                    {allSelected ? <CheckSquare className="w-4 h-4 text-sky-600" /> : <Square className="w-4 h-4 text-slate-400" />}
+                  </button>
+                </th>
                 <th className="py-3 px-4">Nama Kelas</th>
                 <th className="py-3 px-4">Jumlah Siswa</th>
                 <th className="py-3 px-4">Status</th>
@@ -122,13 +180,18 @@ export default function AdminClassesPage() {
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-slate-400">
+                  <td colSpan={5} className="py-8 text-center text-slate-400">
                     Memuat data kelas...
                   </td>
                 </tr>
               ) : classes.length > 0 ? (
                 classes.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50/60 transition">
+                  <tr key={c.id} className={`hover:bg-slate-50/60 transition ${selectedIds.includes(c.id) ? 'bg-sky-50/60' : ''}`}>
+                    <td className="py-3.5 px-4">
+                      <button onClick={() => toggleSelect(c.id)} type="button">
+                        {selectedIds.includes(c.id) ? <CheckSquare className="w-4 h-4 text-sky-600" /> : <Square className="w-4 h-4 text-slate-400" />}
+                      </button>
+                    </td>
                     <td className="py-3.5 px-4 font-bold text-slate-900 text-sm">{c.name}</td>
                     <td className="py-3.5 px-4">
                       <span className="inline-flex items-center gap-1 font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
@@ -162,7 +225,7 @@ export default function AdminClassesPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-slate-400">
+                  <td colSpan={5} className="py-8 text-center text-slate-400">
                     Belum ada data kelas yang dibuat.
                   </td>
                 </tr>

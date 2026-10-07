@@ -167,6 +167,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- ==============================================================================
 -- Dioptimalkan untuk scanner QR agar lookup token cepat.
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower
+    ON users(LOWER(username));
+
 CREATE INDEX IF NOT EXISTS idx_students_qr_token
     ON students(qr_token);
 
