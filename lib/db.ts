@@ -372,33 +372,6 @@ export async function updateClass(id: string, name: string, status: UserStatus):
   return true;
 }
 
-export async function deleteClasses(ids: string[]): Promise<number> {
-  const cleanIds = [...new Set(ids.filter(Boolean))];
-  if (cleanIds.length === 0) return 0;
-
-  const sb = getSupabase();
-  if (sb) {
-    const { data, error } = await sb
-      .from('classes')
-      .delete()
-      .in('id', cleanIds)
-      .select('id');
-
-    if (error) throw new Error(`Gagal menghapus kelas: ${error.message}`);
-    return data?.length || 0;
-  }
-
-  const db = readLocalDb();
-  const idSet = new Set(cleanIds);
-  const before = db.classes.length;
-  db.classes = db.classes.filter((c) => !idSet.has(c.id));
-  db.students = db.students.map((s) =>
-    idSet.has(s.class_id || '') ? { ...s, class_id: null } : s
-  );
-  writeLocalDb(db);
-  return before - db.classes.length;
-}
-
 // -----------------------------------------------------------------------------
 // STUDENT OPERATIONS
 // -----------------------------------------------------------------------------
@@ -567,26 +540,26 @@ export async function createStudent(data: {
   class_id: string;
 }): Promise<Student> {
   const now = new Date().toISOString();
-  const normalizedName = data.name.trim();
-  const normalizedUsername = data.username.trim().toLowerCase();
+  const userId = `u-std-${Date.now()}`;
+  const studentId = `s-${Date.now()}`;
   const qrToken = generateQrToken();
 
   const newUser: User = {
-    id: `u-std-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    username: normalizedUsername,
+    id: userId,
+    username: data.username.trim().toLowerCase(),
     password_hash: data.password_hash,
     role: 'student',
     status: 'active',
-    name: normalizedName,
+    name: data.name.trim(),
     created_at: now,
     updated_at: now,
   };
 
   const newStudent: Student = {
-    id: `s-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    user_id: newUser.id,
+    id: studentId,
+    user_id: userId,
     class_id: data.class_id,
-    name: normalizedName,
+    name: data.name.trim(),
     qr_token: qrToken,
     status: 'active',
     created_at: now,
@@ -595,46 +568,27 @@ export async function createStudent(data: {
 
   const sb = getSupabase();
   if (sb) {
-    const { data: createdUser, error: userErr } = await sb
-      .from('users')
-      .insert({
-        username: normalizedUsername,
-        password_hash: data.password_hash,
-        role: 'student',
-        status: 'active',
-        name: normalizedName,
-      })
-      .select('*')
-      .single();
+    const { data: createdUser, error: userErr } = await sb.from('users').insert({
+      username: newUser.username,
+      password_hash: newUser.password_hash,
+      role: 'student',
+      status: 'active',
+    }).select().single();
+    if (userErr) throw userErr;
 
-    if (userErr) {
-      throw new Error(`Gagal membuat akun siswa: ${userErr.message}`);
-    }
+    const { data: createdStudent, error: stdErr } = await sb.from('students').insert({
+      user_id: createdUser.id,
+      class_id: data.class_id,
+      name: data.name.trim(),
+      qr_token: qrToken,
+      status: 'active',
+    }).select().single();
+    if (stdErr) throw stdErr;
 
-    const { data: createdStudent, error: stdErr } = await sb
-      .from('students')
-      .insert({
-        user_id: createdUser.id,
-        class_id: data.class_id,
-        name: normalizedName,
-        qr_token: qrToken,
-        status: 'active',
-      })
-      .select('*')
-      .single();
-
-    if (stdErr) {
-      await sb.from('users').delete().eq('id', createdUser.id);
-      throw new Error(`Gagal membuat data siswa: ${stdErr.message}`);
-    }
-
-    return createdStudent as Student;
+    return createdStudent;
   }
 
   const db = readLocalDb();
-  const duplicate = db.users.some((u) => u.username.trim().toLowerCase() === normalizedUsername);
-  if (duplicate) throw new Error('Username sudah digunakan.');
-
   db.users.push(newUser);
   db.students.push(newStudent);
   writeLocalDb(db);
@@ -647,52 +601,24 @@ export async function updateStudent(
 ): Promise<boolean> {
   const sb = getSupabase();
   if (sb) {
-    const now = new Date().toISOString();
-    const { data: current, error: currentError } = await sb
-      .from('students')
-      .select('user_id')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (currentError) throw new Error(`Gagal mengambil siswa: ${currentError.message}`);
-    if (!current) return false;
-
-    const { error: studentError } = await sb
-      .from('students')
-      .update({
-        name: data.name.trim(),
-        class_id: data.class_id || null,
-        status: data.status,
-        updated_at: now,
-      })
-      .eq('id', id);
-
-    if (studentError) throw new Error(`Gagal memperbarui siswa: ${studentError.message}`);
-
-    if (current.user_id) {
-      const { error: userError } = await sb
-        .from('users')
-        .update({
-          name: data.name.trim(),
-          status: data.status,
-          updated_at: now,
-        })
-        .eq('id', current.user_id);
-
-      if (userError) throw new Error(`Gagal memperbarui akun siswa: ${userError.message}`);
-    }
-
-    return true;
+    const { error } = await sb.from('students').update({
+      name: data.name.trim(),
+      class_id: data.class_id,
+      status: data.status,
+      updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    return !error;
   }
 
   const db = readLocalDb();
   const s = db.students.find((item) => item.id === id);
   if (!s) return false;
   s.name = data.name.trim();
-  s.class_id = data.class_id || null;
+  s.class_id = data.class_id;
   s.status = data.status;
   s.updated_at = new Date().toISOString();
 
+  // Also update user status if student is disabled
   const u = db.users.find((usr) => usr.id === s.user_id);
   if (u) {
     u.status = data.status;
@@ -700,34 +626,6 @@ export async function updateStudent(
   }
   writeLocalDb(db);
   return true;
-}
-
-export async function deleteStudents(ids: string[]): Promise<number> {
-  const cleanIds = [...new Set(ids.filter(Boolean))];
-  if (cleanIds.length === 0) return 0;
-
-  const sb = getSupabase();
-  if (sb) {
-    const { data, error } = await sb
-      .from('students')
-      .delete()
-      .in('id', cleanIds)
-      .select('id');
-
-    if (error) throw new Error(`Gagal menghapus siswa: ${error.message}`);
-    return data?.length || 0;
-  }
-
-  const db = readLocalDb();
-  const before = db.students.length;
-  const idSet = new Set(cleanIds);
-  const removed = db.students.filter((s) => idSet.has(s.id));
-  db.students = db.students.filter((s) => !idSet.has(s.id));
-  const removedUserIds = new Set(removed.map((s) => s.user_id).filter(Boolean));
-  db.users = db.users.filter((u) => !removedUserIds.has(u.id));
-  db.attendance = db.attendance.filter((a) => !idSet.has(a.student_id));
-  writeLocalDb(db);
-  return before - db.students.length;
 }
 
 export async function regenerateStudentQr(studentId: string): Promise<string> {
