@@ -41,6 +41,7 @@ interface RecentScanItem {
 export default function SecurityScannerPage() {
   const router = useRouter();
   const [action, setAction] = useState<AttendanceAction>('check_in');
+  const actionRef = useRef<AttendanceAction>('check_in');
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
@@ -107,6 +108,7 @@ export default function SecurityScannerPage() {
 
   // Ultra-fast Attendance Verification
   const processToken = async (token: string) => {
+    const currentAction = actionRef.current;
     if (!token || isProcessingRef.current) return;
 
     const now = Date.now();
@@ -127,7 +129,7 @@ export default function SecurityScannerPage() {
       const res = await fetch('/api/attendance/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, action }),
+        body: JSON.stringify({ token, action: currentAction }),
       });
 
       const data: ScanResponse = await res.json();
@@ -136,12 +138,12 @@ export default function SecurityScannerPage() {
         playSound('success');
         setFeedback({
           type: 'success',
-          title: action === 'check_in' ? 'CHECK IN BERHASIL' : 'CHECK OUT BERHASIL',
+          title: currentAction === 'check_in' ? 'CHECK IN BERHASIL' : 'CHECK OUT BERHASIL',
           name: data.name,
           className: data.class,
           time: data.time,
           message: data.message,
-          action,
+          action: currentAction,
         });
 
         // Add to recent list
@@ -150,7 +152,7 @@ export default function SecurityScannerPage() {
             id: String(Date.now()),
             name: data.name,
             className: data.class,
-            action,
+            action: currentAction,
             time: data.time,
             status: data.status,
           },
@@ -167,7 +169,7 @@ export default function SecurityScannerPage() {
             className: data.details?.class,
             time: data.details?.time,
             message: data.message,
-            action,
+            action: currentAction,
           });
         } else if (data.code === 'ALREADY_CHECKED_OUT') {
           playSound('warning');
@@ -178,7 +180,7 @@ export default function SecurityScannerPage() {
             className: data.details?.class,
             time: data.details?.time,
             message: data.message,
-            action,
+            action: currentAction,
           });
         } else if (data.code === 'NOT_CHECKED_IN') {
           playSound('error');
@@ -188,7 +190,7 @@ export default function SecurityScannerPage() {
             name: data.details?.name,
             className: data.details?.class,
             message: data.message,
-            action,
+            action: currentAction,
           });
         } else if (data.code === 'STUDENT_DISABLED') {
           playSound('error');
@@ -198,7 +200,7 @@ export default function SecurityScannerPage() {
             name: data.details?.name,
             className: data.details?.class,
             message: 'Akun dinonaktifkan. Hubungi Admin.',
-            action,
+            action: currentAction,
           });
         } else {
           playSound('error');
@@ -206,7 +208,7 @@ export default function SecurityScannerPage() {
             type: 'error',
             title: 'QR TIDAK VALID',
             message: data.message || 'QR Code tidak dikenali oleh sistem.',
-            action,
+            action: currentAction,
           });
         }
       }
@@ -216,7 +218,7 @@ export default function SecurityScannerPage() {
         type: 'error',
         title: 'KONEKSI BERMASALAH',
         message: 'Gagal terhubung ke server. Absensi belum tercatat.',
-        action,
+        action: currentAction,
       });
     } finally {
       // Auto-ready for next student in 1.8 seconds WITHOUT stopping camera!
@@ -353,7 +355,7 @@ export default function SecurityScannerPage() {
         <div className="grid grid-cols-2 gap-2 bg-slate-900 p-1 rounded-2xl border border-slate-800">
           <button
             type="button"
-            onClick={() => setAction('check_in')}
+            onClick={() => { actionRef.current = 'check_in'; setAction('check_in'); }}
             className={`py-3 rounded-xl font-black text-sm tracking-wide transition flex items-center justify-center gap-2 ${
               action === 'check_in'
                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40 ring-2 ring-emerald-400'
@@ -366,7 +368,7 @@ export default function SecurityScannerPage() {
 
           <button
             type="button"
-            onClick={() => setAction('check_out')}
+            onClick={() => { actionRef.current = 'check_out'; setAction('check_out'); }}
             className={`py-3 rounded-xl font-black text-sm tracking-wide transition flex items-center justify-center gap-2 ${
               action === 'check_out'
                 ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/40 ring-2 ring-sky-400'

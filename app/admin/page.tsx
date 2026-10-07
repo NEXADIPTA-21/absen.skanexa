@@ -42,7 +42,11 @@ export default function AdminDashboardPage() {
   const fetchDashboard = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const res = await fetch('/api/admin/dashboard');
+      const res = await fetch('/api/admin/dashboard', {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -57,6 +61,12 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     fetchDashboard();
+
+    const interval = window.setInterval(() => {
+      fetchDashboard(false);
+    }, 5000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   if (loading) {

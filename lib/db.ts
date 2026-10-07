@@ -217,29 +217,13 @@ function writeLocalDb(data: LocalDatabase): void {
 // USER OPERATIONS
 // -----------------------------------------------------------------------------
 export async function getUserByUsername(username: string): Promise<User | null> {
-  const normalizedUsername = username.trim().toLowerCase();
-  if (!normalizedUsername) return null;
-
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb
-      .from('users')
-      .select('*')
-      .eq('username', normalizedUsername)
-      .maybeSingle();
-
-    if (error) {
-      console.error('getUserByUsername Supabase error:', error);
-      throw new Error(`Gagal mengambil user dari database: ${error.message}`);
-    }
-
-    return (data as User | null) || null;
+    const { data } = await sb.from('users').select('*').eq('username', username.trim()).single();
+    return data || null;
   }
-
   const db = readLocalDb();
-  return db.users.find(
-    (u) => u.username.trim().toLowerCase() === normalizedUsername
-  ) || null;
+  return db.users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase()) || null;
 }
 
 export async function getUserById(id: string): Promise<User | null> {
@@ -256,14 +240,9 @@ export async function createUser(
   user: Omit<User, 'id' | 'created_at' | 'updated_at'>
 ): Promise<User> {
   const now = new Date().toISOString();
-  const normalizedUsername = user.username.trim().toLowerCase();
-  const normalizedName = (user.name || normalizedUsername).trim();
-
-  const id = `u-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  const id = `u-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   const newUser: User = {
     ...user,
-    username: normalizedUsername,
-    name: normalizedName,
     id,
     created_at: now,
     updated_at: now,
@@ -271,30 +250,17 @@ export async function createUser(
 
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb
-      .from('users')
-      .insert({
-        username: normalizedUsername,
-        password_hash: user.password_hash,
-        role: user.role,
-        status: user.status,
-        name: normalizedName,
-      })
-      .select('*')
-      .single();
-
-    if (error) {
-      console.error('createUser Supabase error:', error);
-      throw new Error(`Gagal menyimpan akun ke Supabase: ${error.message}`);
-    }
-    if (!data) throw new Error('Supabase tidak mengembalikan data user setelah insert.');
-    return data as User;
+    const { data, error } = await sb.from('users').insert({
+      username: user.username,
+      password_hash: user.password_hash,
+      role: user.role,
+      status: user.status,
+    }).select().single();
+    if (error) throw error;
+    return data;
   }
 
   const db = readLocalDb();
-  if (db.users.some((u) => u.username.trim().toLowerCase() === normalizedUsername)) {
-    throw new Error('Username sudah digunakan.');
-  }
   db.users.push(newUser);
   writeLocalDb(db);
   return newUser;
@@ -303,19 +269,9 @@ export async function createUser(
 export async function updateUserPassword(id: string, password_hash: string): Promise<boolean> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb
-      .from('users')
-      .update({ password_hash, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('id')
-      .maybeSingle();
-    if (error) {
-      console.error('updateUserPassword Supabase error:', error);
-      throw new Error(`Gagal mengubah password: ${error.message}`);
-    }
-    return Boolean(data);
+    const { error } = await sb.from('users').update({ password_hash, updated_at: new Date().toISOString() }).eq('id', id);
+    return !error;
   }
-
   const db = readLocalDb();
   const user = db.users.find((u) => u.id === id);
   if (!user) return false;
@@ -328,19 +284,9 @@ export async function updateUserPassword(id: string, password_hash: string): Pro
 export async function updateUserStatus(id: string, status: UserStatus): Promise<boolean> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb
-      .from('users')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('id')
-      .maybeSingle();
-    if (error) {
-      console.error('updateUserStatus Supabase error:', error);
-      throw new Error(`Gagal mengubah status akun: ${error.message}`);
-    }
-    return Boolean(data);
+    const { error } = await sb.from('users').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    return !error;
   }
-
   const db = readLocalDb();
   const user = db.users.find((u) => u.id === id);
   if (!user) return false;
@@ -353,24 +299,12 @@ export async function updateUserStatus(id: string, status: UserStatus): Promise<
 export async function getSecurityOfficers(): Promise<User[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb
-      .from('users')
-      .select('*')
-      .eq('role', 'security')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('getSecurityOfficers Supabase error:', error);
-      throw new Error(`Gagal mengambil data petugas: ${error.message}`);
-    }
-    return (data || []) as User[];
+    const { data } = await sb.from('users').select('*').eq('role', 'security').order('created_at', { ascending: false });
+    return data || [];
   }
-
   const db = readLocalDb();
   return db.users.filter((u) => u.role === 'security');
 }
-
-
 
 // -----------------------------------------------------------------------------
 // CLASS OPERATIONS
@@ -443,22 +377,10 @@ export async function updateClass(id: string, name: string, status: UserStatus):
 // -----------------------------------------------------------------------------
 export async function getStudents(filters?: { classId?: string; search?: string }): Promise<Student[]> {
   const sb = getSupabase();
-
   if (sb) {
     let query = sb
       .from('students')
-      .select(`
-        id,
-        user_id,
-        class_id,
-        name,
-        qr_token,
-        status,
-        created_at,
-        updated_at,
-        classes(name),
-        users(username)
-      `)
+      .select('id, user_id, class_id, name, qr_token, status, created_at, updated_at, classes(name), users(username)')
       .order('created_at', { ascending: false });
 
     if (filters?.classId && filters.classId !== 'all') {
@@ -466,10 +388,7 @@ export async function getStudents(filters?: { classId?: string; search?: string 
     }
 
     const { data, error } = await query;
-    if (error) {
-      console.error('getStudents Supabase error:', error);
-      throw new Error(`Gagal mengambil data siswa: ${error.message}`);
-    }
+    if (error) throw new Error(`Gagal mengambil data siswa: ${error.message}`);
 
     let students: Student[] = (data || []).map((row: any) => ({
       id: row.id,
@@ -484,12 +403,12 @@ export async function getStudents(filters?: { classId?: string; search?: string 
       username: row.users?.username || '',
     }));
 
-    if (filters?.search) {
-      const search = filters.search.trim().toLowerCase();
+    if (filters?.search?.trim()) {
+      const queryText = filters.search.trim().toLowerCase();
       students = students.filter((student) =>
-        student.name.toLowerCase().includes(search) ||
-        (student.username || '').toLowerCase().includes(search) ||
-        student.qr_token.toLowerCase().includes(search)
+        student.name.toLowerCase().includes(queryText) ||
+        (student.username || '').toLowerCase().includes(queryText) ||
+        student.qr_token.toLowerCase().includes(queryText)
       );
     }
 
@@ -500,22 +419,27 @@ export async function getStudents(filters?: { classId?: string; search?: string 
   let students: Student[] = db.students.map((s) => {
     const c = db.classes.find((cl) => cl.id === s.class_id);
     const u = db.users.find((usr) => usr.id === s.user_id);
-    return { ...s, class_name: c?.name || 'Belum ada kelas', username: u?.username || '' };
+    return {
+      ...s,
+      class_name: c?.name || 'Belum ada kelas',
+      username: u?.username || '',
+    };
   });
 
   if (filters?.classId && filters.classId !== 'all') {
     students = students.filter((s) => s.class_id === filters.classId);
   }
-  if (filters?.search) {
-    const search = filters.search.trim().toLowerCase();
+  if (filters?.search?.trim()) {
+    const query = filters.search.trim().toLowerCase();
     students = students.filter((s) =>
-      s.name.toLowerCase().includes(search) ||
-      (s.username || '').toLowerCase().includes(search) ||
-      s.qr_token.toLowerCase().includes(search)
+      s.name.toLowerCase().includes(query) ||
+      (s.username || '').toLowerCase().includes(query) ||
+      s.qr_token.toLowerCase().includes(query)
     );
   }
   return students;
 }
+
 
 export async function getStudentById(id: string): Promise<Student | null> {
   const sb = getSupabase();
@@ -525,13 +449,15 @@ export async function getStudentById(id: string): Promise<Student | null> {
       .select('id, user_id, class_id, name, qr_token, status, created_at, updated_at, classes(name), users(username)')
       .eq('id', id)
       .maybeSingle();
-    if (error) {
-      console.error('getStudentById Supabase error:', error);
-      throw new Error(`Gagal mengambil data siswa: ${error.message}`);
-    }
+
+    if (error) throw new Error(`Gagal mengambil siswa: ${error.message}`);
     if (!data) return null;
-    const row: any = data;
-    return { ...row, class_name: row.classes?.name || 'Belum ada kelas', username: row.users?.username || '' } as Student;
+
+    return {
+      ...(data as any),
+      class_name: (data as any).classes?.name || 'Belum ada kelas',
+      username: (data as any).users?.username || '',
+    } as Student;
   }
 
   const db = readLocalDb();
@@ -539,8 +465,13 @@ export async function getStudentById(id: string): Promise<Student | null> {
   if (!s) return null;
   const c = db.classes.find((cl) => cl.id === s.class_id);
   const u = db.users.find((usr) => usr.id === s.user_id);
-  return { ...s, class_name: c?.name || 'Belum ada kelas', username: u?.username || '' };
+  return {
+    ...s,
+    class_name: c?.name || 'Belum ada kelas',
+    username: u?.username || '',
+  };
 }
+
 
 export async function getStudentByUserId(userId: string): Promise<Student | null> {
   const sb = getSupabase();
@@ -550,13 +481,15 @@ export async function getStudentByUserId(userId: string): Promise<Student | null
       .select('id, user_id, class_id, name, qr_token, status, created_at, updated_at, classes(name), users(username)')
       .eq('user_id', userId)
       .maybeSingle();
-    if (error) {
-      console.error('getStudentByUserId Supabase error:', error);
-      throw new Error(`Gagal mengambil data siswa: ${error.message}`);
-    }
+
+    if (error) throw new Error(`Gagal mengambil data siswa: ${error.message}`);
     if (!data) return null;
-    const row: any = data;
-    return { ...row, class_name: row.classes?.name || 'Belum ada kelas', username: row.users?.username || '' } as Student;
+
+    return {
+      ...(data as any),
+      class_name: (data as any).classes?.name || 'Belum ada kelas',
+      username: (data as any).users?.username || '',
+    } as Student;
   }
 
   const db = readLocalDb();
@@ -564,15 +497,14 @@ export async function getStudentByUserId(userId: string): Promise<Student | null
   if (!s) return null;
   const c = db.classes.find((cl) => cl.id === s.class_id);
   const u = db.users.find((usr) => usr.id === s.user_id);
-  return { ...s, class_name: c?.name || 'Belum ada kelas', username: u?.username || '' };
+  return {
+    ...s,
+    class_name: c?.name || 'Belum ada kelas',
+    username: u?.username || '',
+  };
 }
 
 
-
-/**
- * Ultra-fast lookup directly by unique qr_token.
- * Specifically optimized as required by PRD Section 16 & 17.
- */
 export async function getStudentByQrToken(qrToken: string): Promise<Student | null> {
   const trimmedToken = qrToken.trim();
   const sb = getSupabase();
@@ -608,26 +540,26 @@ export async function createStudent(data: {
   class_id: string;
 }): Promise<Student> {
   const now = new Date().toISOString();
-  const normalizedName = data.name.trim();
-  const normalizedUsername = data.username.trim().toLowerCase();
+  const userId = `u-std-${Date.now()}`;
+  const studentId = `s-${Date.now()}`;
   const qrToken = generateQrToken();
 
   const newUser: User = {
-    id: `u-std-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    username: normalizedUsername,
+    id: userId,
+    username: data.username.trim().toLowerCase(),
     password_hash: data.password_hash,
     role: 'student',
     status: 'active',
-    name: normalizedName,
+    name: data.name.trim(),
     created_at: now,
     updated_at: now,
   };
 
   const newStudent: Student = {
-    id: `s-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    user_id: newUser.id,
+    id: studentId,
+    user_id: userId,
     class_id: data.class_id,
-    name: normalizedName,
+    name: data.name.trim(),
     qr_token: qrToken,
     status: 'active',
     created_at: now,
@@ -636,60 +568,32 @@ export async function createStudent(data: {
 
   const sb = getSupabase();
   if (sb) {
-    const { data: createdUser, error: userErr } = await sb
-      .from('users')
-      .insert({
-        username: normalizedUsername,
-        password_hash: data.password_hash,
-        role: 'student',
-        status: 'active',
-        name: normalizedName,
-      })
-      .select('*')
-      .single();
+    const { data: createdUser, error: userErr } = await sb.from('users').insert({
+      username: newUser.username,
+      password_hash: newUser.password_hash,
+      role: 'student',
+      status: 'active',
+    }).select().single();
+    if (userErr) throw userErr;
 
-    if (userErr) {
-      console.error('createStudent user error:', userErr);
-      throw new Error(`Gagal membuat akun siswa: ${userErr.message}`);
-    }
+    const { data: createdStudent, error: stdErr } = await sb.from('students').insert({
+      user_id: createdUser.id,
+      class_id: data.class_id,
+      name: data.name.trim(),
+      qr_token: qrToken,
+      status: 'active',
+    }).select().single();
+    if (stdErr) throw stdErr;
 
-    const { data: createdStudent, error: studentErr } = await sb
-      .from('students')
-      .insert({
-        user_id: createdUser.id,
-        class_id: data.class_id,
-        name: normalizedName,
-        qr_token: qrToken,
-        status: 'active',
-      })
-      .select('*')
-      .single();
-
-    if (studentErr) {
-      console.error('createStudent student error:', studentErr);
-      await sb.from('users').delete().eq('id', createdUser.id);
-      throw new Error(`Gagal membuat data siswa: ${studentErr.message}`);
-    }
-
-    if (!createdStudent) {
-      await sb.from('users').delete().eq('id', createdUser.id);
-      throw new Error('Data siswa tidak dikembalikan oleh Supabase.');
-    }
-
-    return createdStudent as Student;
+    return createdStudent;
   }
 
   const db = readLocalDb();
-  if (db.users.some((u) => u.username.trim().toLowerCase() === normalizedUsername)) {
-    throw new Error('Username sudah digunakan.');
-  }
   db.users.push(newUser);
   db.students.push(newStudent);
   writeLocalDb(db);
   return newStudent;
 }
-
-
 
 export async function updateStudent(
   id: string,
@@ -697,37 +601,13 @@ export async function updateStudent(
 ): Promise<boolean> {
   const sb = getSupabase();
   if (sb) {
-    const { data: student, error: findError } = await sb
-      .from('students')
-      .select('user_id')
-      .eq('id', id)
-      .maybeSingle();
-    if (findError) throw new Error(`Gagal mencari siswa: ${findError.message}`);
-    if (!student) return false;
-
-    const now = new Date().toISOString();
-    const { error } = await sb
-      .from('students')
-      .update({
-        name: data.name.trim(),
-        class_id: data.class_id,
-        status: data.status,
-        updated_at: now,
-      })
-      .eq('id', id);
-    if (error) throw new Error(`Gagal memperbarui siswa: ${error.message}`);
-
-    const { error: userError } = await sb
-      .from('users')
-      .update({
-        name: data.name.trim(),
-        status: data.status,
-        updated_at: now,
-      })
-      .eq('id', student.user_id);
-    if (userError) throw new Error(`Gagal memperbarui akun siswa: ${userError.message}`);
-
-    return true;
+    const { error } = await sb.from('students').update({
+      name: data.name.trim(),
+      class_id: data.class_id,
+      status: data.status,
+      updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    return !error;
   }
 
   const db = readLocalDb();
@@ -737,6 +617,8 @@ export async function updateStudent(
   s.class_id = data.class_id;
   s.status = data.status;
   s.updated_at = new Date().toISOString();
+
+  // Also update user status if student is disabled
   const u = db.users.find((usr) => usr.id === s.user_id);
   if (u) {
     u.status = data.status;
@@ -745,8 +627,6 @@ export async function updateStudent(
   writeLocalDb(db);
   return true;
 }
-
-
 
 export async function regenerateStudentQr(studentId: string): Promise<string> {
   const newQr = generateQrToken();
@@ -933,6 +813,67 @@ export async function getAttendanceRecords(filters?: {
   status?: string;
   studentId?: string;
 }): Promise<AttendanceRecord[]> {
+  const sb = getSupabase();
+  if (sb) {
+    let query = sb
+      .from('attendance')
+      .select(`
+        id,
+        student_id,
+        attendance_date,
+        check_in_at,
+        check_out_at,
+        check_in_by,
+        check_out_by,
+        status,
+        created_at,
+        updated_at,
+        students(name, qr_token, class_id, classes(name)),
+        check_in_user:users!attendance_check_in_by_fkey(name, username),
+        check_out_user:users!attendance_check_out_by_fkey(name, username)
+      `)
+      .order('check_in_at', { ascending: false, nullsFirst: false });
+
+    if (filters?.date) query = query.eq('attendance_date', filters.date);
+    if (filters?.startDate) query = query.gte('attendance_date', filters.startDate);
+    if (filters?.endDate) query = query.lte('attendance_date', filters.endDate);
+    if (filters?.studentId) query = query.eq('student_id', filters.studentId);
+    if (filters?.status && filters.status !== 'all') query = query.eq('status', filters.status);
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('getAttendanceRecords Supabase error:', error);
+      throw new Error(`Gagal mengambil data presensi: ${error.message}`);
+    }
+
+    let records: AttendanceRecord[] = (data || []).map((row: any) => ({
+      id: row.id,
+      student_id: row.student_id,
+      attendance_date: row.attendance_date,
+      check_in_at: row.check_in_at,
+      check_out_at: row.check_out_at,
+      check_in_by: row.check_in_by,
+      check_out_by: row.check_out_by,
+      status: row.status,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      student_name: row.students?.name || 'Siswa',
+      class_name: row.students?.classes?.name || '-',
+      student_qr: row.students?.qr_token,
+      check_in_by_name: row.check_in_user?.name || row.check_in_user?.username || '-',
+      check_out_by_name: row.check_out_user?.name || row.check_out_user?.username || '-',
+    }));
+
+    if (filters?.classId && filters.classId !== 'all') {
+      records = records.filter((r: any) => {
+        const row = (data || []).find((item: any) => item.id === r.id);
+        return row?.students?.class_id === filters.classId;
+      });
+    }
+
+    return records;
+  }
+
   const db = readLocalDb();
   let records = db.attendance.map((a) => {
     const student = db.students.find((s) => s.id === a.student_id);
@@ -949,30 +890,19 @@ export async function getAttendanceRecords(filters?: {
     };
   });
 
-  if (filters?.date) {
-    records = records.filter((r) => r.attendance_date === filters.date);
-  }
-  if (filters?.startDate) {
-    records = records.filter((r) => r.attendance_date >= filters.startDate!);
-  }
-  if (filters?.endDate) {
-    records = records.filter((r) => r.attendance_date <= filters.endDate!);
-  }
-  if (filters?.studentId) {
-    records = records.filter((r) => r.student_id === filters.studentId);
-  }
+  if (filters?.date) records = records.filter((r) => r.attendance_date === filters.date);
+  if (filters?.startDate) records = records.filter((r) => r.attendance_date >= filters.startDate!);
+  if (filters?.endDate) records = records.filter((r) => r.attendance_date <= filters.endDate!);
+  if (filters?.studentId) records = records.filter((r) => r.student_id === filters.studentId);
   if (filters?.classId && filters.classId !== 'all') {
-    const studentIdsInClass = db.students
-      .filter((s) => s.class_id === filters.classId)
-      .map((s) => s.id);
-    records = records.filter((r) => studentIdsInClass.includes(r.student_id));
+    const ids = db.students.filter((s) => s.class_id === filters.classId).map((s) => s.id);
+    records = records.filter((r) => ids.includes(r.student_id));
   }
-  if (filters?.status && filters.status !== 'all') {
-    records = records.filter((r) => r.status === filters.status);
-  }
+  if (filters?.status && filters.status !== 'all') records = records.filter((r) => r.status === filters.status);
 
-  return records.sort((a, b) => (b.check_in_at || '').localeCompare(a.check_in_at || ''));
+  return records.sort((a, b) => (b.check_in_at || b.check_out_at || '').localeCompare(a.check_in_at || a.check_out_at || ''));
 }
+
 
 export async function correctAttendance(
   id: string,
@@ -985,28 +915,49 @@ export async function correctAttendance(
   reason?: string
 ): Promise<AttendanceRecord | null> {
   const nowIso = new Date().toISOString();
+  const sb = getSupabase();
+
+  if (sb) {
+    const { data: previous, error: findError } = await sb
+      .from('attendance')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (findError) throw new Error(`Gagal mengambil presensi: ${findError.message}`);
+    if (!previous) return null;
+
+    const { data: updated, error } = await sb
+      .from('attendance')
+      .update({ ...updates, updated_at: nowIso })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(`Gagal mengoreksi presensi: ${error.message}`);
+
+    await logAudit(adminId, 'attendance.manual_update', 'attendance', id, {
+      previous,
+      updated: updates,
+      reason,
+    });
+
+    return updated as AttendanceRecord;
+  }
+
   const db = readLocalDb();
   const rec = db.attendance.find((a) => a.id === id);
   if (!rec) return null;
-
   const previous = { ...rec };
   if (updates.check_in_at !== undefined) rec.check_in_at = updates.check_in_at;
   if (updates.check_out_at !== undefined) rec.check_out_at = updates.check_out_at;
   rec.status = updates.status;
   rec.updated_at = nowIso;
-
   writeLocalDb(db);
-
-  await logAudit(
-    adminId,
-    'attendance.manual_update',
-    'attendance',
-    id,
-    { previous, updated: updates, reason }
-  );
-
+  await logAudit(adminId, 'attendance.manual_update', 'attendance', id, { previous, updated: updates, reason });
   return rec;
 }
+
 
 export async function getDashboardStats(dateStr: string): Promise<{
   totalStudents: number;
@@ -1015,23 +966,44 @@ export async function getDashboardStats(dateStr: string): Promise<{
   notCheckedInCount: number;
   checkOutCount: number;
 }> {
+  const sb = getSupabase();
+  if (sb) {
+    const [studentsResult, attendanceResult] = await Promise.all([
+      sb.from('students').select('id, status').eq('status', 'active'),
+      sb.from('attendance').select('student_id, check_in_at, check_out_at, status').eq('attendance_date', dateStr),
+    ]);
+
+    if (studentsResult.error) {
+      throw new Error(`Gagal menghitung total siswa: ${studentsResult.error.message}`);
+    }
+    if (attendanceResult.error) {
+      throw new Error(`Gagal menghitung presensi: ${attendanceResult.error.message}`);
+    }
+
+    const totalStudents = (studentsResult.data || []).length;
+    const todayRecords = attendanceResult.data || [];
+    const checkInCount = todayRecords.filter((a: any) => Boolean(a.check_in_at)).length;
+    const lateCount = todayRecords.filter((a: any) => a.status === 'late').length;
+    const checkOutCount = todayRecords.filter((a: any) => Boolean(a.check_out_at)).length;
+
+    return {
+      totalStudents,
+      checkInCount,
+      lateCount,
+      notCheckedInCount: Math.max(0, totalStudents - checkInCount),
+      checkOutCount,
+    };
+  }
+
   const db = readLocalDb();
   const totalStudents = db.students.filter((s) => s.status === 'active').length;
   const todayRecords = db.attendance.filter((a) => a.attendance_date === dateStr);
-
   const checkInCount = todayRecords.filter((a) => a.check_in_at !== null).length;
   const lateCount = todayRecords.filter((a) => a.status === 'late').length;
   const checkOutCount = todayRecords.filter((a) => a.check_out_at !== null).length;
-  const notCheckedInCount = Math.max(0, totalStudents - checkInCount);
-
-  return {
-    totalStudents,
-    checkInCount,
-    lateCount,
-    notCheckedInCount,
-    checkOutCount,
-  };
+  return { totalStudents, checkInCount, lateCount, notCheckedInCount: Math.max(0, totalStudents - checkInCount), checkOutCount };
 }
+
 
 // -----------------------------------------------------------------------------
 // SETTINGS OPERATIONS
@@ -1039,31 +1011,41 @@ export async function getDashboardStats(dateStr: string): Promise<{
 export async function getAttendanceSettings(): Promise<AttendanceSettings> {
   const sb = getSupabase();
   if (sb) {
-    const { data } = await sb.from('attendance_settings').select('*').eq('id', 1).single();
-    if (data) return data;
+    const { data, error } = await sb.from('attendance_settings').select('*').eq('id', 1).single();
+    if (error) throw new Error(`Gagal mengambil pengaturan presensi: ${error.message}`);
+    if (data) return data as AttendanceSettings;
   }
   const db = readLocalDb();
   return db.settings;
 }
+
 
 export async function updateAttendanceSettings(
   settings: Partial<AttendanceSettings>,
   adminId?: string
 ): Promise<AttendanceSettings> {
   const now = new Date().toISOString();
-  const db = readLocalDb();
-  db.settings = {
-    ...db.settings,
-    ...settings,
-    updated_at: now,
-  };
-  writeLocalDb(db);
+  const sb = getSupabase();
 
-  if (adminId) {
-    await logAudit(adminId, 'settings.update', 'attendance_settings', '1', settings);
+  if (sb) {
+    const { data, error } = await sb
+      .from('attendance_settings')
+      .upsert({ id: 1, ...settings, updated_at: now }, { onConflict: 'id' })
+      .select('*')
+      .single();
+
+    if (error) throw new Error(`Gagal menyimpan pengaturan presensi: ${error.message}`);
+    if (adminId) await logAudit(adminId, 'settings.update', 'attendance_settings', '1', settings);
+    return data as AttendanceSettings;
   }
+
+  const db = readLocalDb();
+  db.settings = { ...db.settings, ...settings, updated_at: now };
+  writeLocalDb(db);
+  if (adminId) await logAudit(adminId, 'settings.update', 'attendance_settings', '1', settings);
   return db.settings;
 }
+
 
 // -----------------------------------------------------------------------------
 // AUDIT LOG OPERATIONS
@@ -1108,28 +1090,12 @@ export async function logAudit(
 }
 
 export async function getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
-  const sb = getSupabase();
-  if (sb) {
-    const { data, error } = await sb
-      .from('audit_logs')
-      .select('*, users(name, username)')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (error) {
-      console.error('getAuditLogs Supabase error:', error);
-      throw new Error(`Gagal mengambil audit log: ${error.message}`);
-    }
-    return (data || []).map((row: any) => ({
-      ...row,
-      user_name: row.users?.name || row.users?.username || (row.user_id ? 'User' : 'System'),
-    })) as AuditLog[];
-  }
-
   const db = readLocalDb();
   return db.audit_logs.slice(0, limit).map((log) => {
     const user = db.users.find((u) => u.id === log.user_id);
-    return { ...log, user_name: user?.name || user?.username || (log.user_id ? 'User' : 'System') };
+    return {
+      ...log,
+      user_name: user?.name || user?.username || (log.user_id ? 'User' : 'System'),
+    };
   });
 }
-
-

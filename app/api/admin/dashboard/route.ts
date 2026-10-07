@@ -22,6 +22,12 @@ export async function GET() {
     formattedDate: formatIndonesianDate(todayDate),
     stats,
     settings,
-    recentAttendance: recentAttendance.slice(0, 10), // latest 10 check-ins today
+    recentAttendance: recentAttendance.slice(0, 10), // latest 10 attendance records today
+  }, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
   });
 }
