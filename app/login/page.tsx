@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { QrCode, Shield, User, Lock, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { QrCode, User, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -41,12 +41,6 @@ export default function LoginPage() {
       setError('Koneksi bermasalah. Pastikan server aktif.');
       setLoading(false);
     }
-  };
-
-  const setDemoAccount = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setError(null);
   };
 
   return (
@@ -138,38 +132,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Quick Demo Login Preset Buttons */}
-          <div className="mt-8 pt-6 border-t border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center mb-3">
-              Uji Coba Cepat (Pilih Akun Demo)
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setDemoAccount('admin', 'admin123')}
-                className="p-2.5 bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-300 rounded-xl text-xs font-medium text-slate-700 hover:text-sky-700 transition text-center flex flex-col items-center gap-1"
-              >
-                <Shield className="w-4 h-4 text-sky-600" />
-                <span>Admin</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setDemoAccount('security01', 'security123')}
-                className="p-2.5 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-xl text-xs font-medium text-slate-700 hover:text-emerald-700 transition text-center flex flex-col items-center gap-1"
-              >
-                <QrCode className="w-4 h-4 text-emerald-600" />
-                <span>Keamanan</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setDemoAccount('ahmad.fauzan', 'student123')}
-                className="p-2.5 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-medium text-slate-700 hover:text-indigo-700 transition text-center flex flex-col items-center gap-1"
-              >
-                <User className="w-4 h-4 text-indigo-600" />
-                <span>Siswa</span>
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}

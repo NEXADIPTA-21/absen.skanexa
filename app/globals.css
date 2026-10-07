@@ -43,3 +43,49 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+
+/* Mobile QR scanner: use the entire available viewport without black letterbox gaps. */
+.security-scanner-shell {
+  height: 100dvh;
+  min-height: 100svh;
+  overflow: hidden;
+}
+
+.security-camera-stage {
+  min-height: 0;
+}
+
+.security-camera-stage #qr-reader {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  background: #000 !important;
+  overflow: hidden !important;
+}
+
+.security-camera-stage #qr-reader > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.security-camera-stage #qr-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+.security-camera-stage #qr-reader__dashboard_section {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .security-scanner-shell {
+    width: 100%;
+    max-width: none;
+  }
+}

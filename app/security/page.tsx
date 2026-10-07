@@ -302,7 +302,7 @@ export default function SecurityScannerPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-between max-w-md mx-auto select-none">
+    <div className="security-scanner-shell bg-slate-900 text-white flex flex-col max-w-md mx-auto select-none">
       {/* 1. Header Bar */}
       <header className="px-4 py-3 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between z-20">
         <div className="flex items-center gap-2.5">
@@ -382,7 +382,7 @@ export default function SecurityScannerPage() {
       </div>
 
       {/* 3. Camera Viewfinder Area */}
-      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[380px]">
+      <div className="security-camera-stage relative flex-1 min-h-0 bg-black flex items-center justify-center overflow-hidden">
         {/* html5-qrcode video element target */}
         <div id="qr-reader" className="w-full h-full object-cover"></div>
 
