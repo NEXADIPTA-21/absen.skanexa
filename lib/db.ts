@@ -857,9 +857,9 @@ export async function getAttendanceRecords(filters?: {
       status: row.status,
       created_at: row.created_at,
       updated_at: row.updated_at,
-      student_name: row.students?.name || 'Siswa',
-      class_name: row.students?.classes?.name || '-',
-      student_qr: row.students?.qr_token,
+      student_name: (Array.isArray(row.students) ? row.students[0]?.name : row.students?.name) || 'Siswa',
+      class_name: (Array.isArray(row.students) ? (Array.isArray(row.students[0]?.classes) ? row.students[0]?.classes[0]?.name : row.students[0]?.classes?.name) : (Array.isArray(row.students?.classes) ? row.students.classes[0]?.name : row.students?.classes?.name)) || '-',
+      student_qr: (Array.isArray(row.students) ? row.students[0]?.qr_token : row.students?.qr_token),
       check_in_by_name: row.check_in_user?.name || row.check_in_user?.username || '-',
       check_out_by_name: row.check_out_user?.name || row.check_out_user?.username || '-',
     }));
@@ -867,7 +867,8 @@ export async function getAttendanceRecords(filters?: {
     if (filters?.classId && filters.classId !== 'all') {
       records = records.filter((r: any) => {
         const row = (data || []).find((item: any) => item.id === r.id);
-        return row?.students?.class_id === filters.classId;
+        const student = Array.isArray(row?.students) ? row.students[0] : row?.students;
+        return student?.class_id === filters.classId;
       });
     }
 
