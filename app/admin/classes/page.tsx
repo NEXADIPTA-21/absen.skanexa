@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Users, Plus, Edit2, CheckCircle2, XCircle, Search, RefreshCw, X, Trash2, CheckSquare, Square } from 'lucide-react';
 import { ClassItem } from '@/lib/types';
+import { useDialog } from '@/components/dialog-provider';
 
 export default function AdminClassesPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -15,6 +16,7 @@ export default function AdminClassesPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
+  const { confirm, alert } = useDialog();
 
   const fetchClasses = async () => {
     try {
@@ -108,7 +110,13 @@ export default function AdminClassesPage() {
       ? `\n\n${withStudents.length} kelas masih memiliki siswa. Siswa TIDAK akan dihapus, tetapi kelasnya akan menjadi "Belum ada kelas".`
       : '';
 
-    if (!confirm(`Hapus ${selectedIds.length} kelas yang dipilih?${warning}\n\nTindakan ini tidak dapat dibatalkan.`)) return;
+    const ok = await confirm({
+      title: `Hapus ${selectedIds.length} kelas?`,
+      message: `Kelas yang dipilih akan dihapus. ${withStudents.length > 0 ? `${withStudents.length} kelas masih memiliki siswa. Siswa TIDAK akan dihapus, tetapi kelasnya akan menjadi \"Belum ada kelas\". ` : ''}Tindakan ini tidak dapat dibatalkan.`,
+      confirmText: 'Ya, hapus kelas',
+      type: 'confirm',
+    });
+    if (!ok) return;
 
     setDeleting(true);
     try {
@@ -121,7 +129,7 @@ export default function AdminClassesPage() {
       if (!res.ok || !data.success) throw new Error(data.message || 'Gagal menghapus kelas.');
       setSelectedIds([]);
       await fetchClasses();
-      alert(data.message || 'Kelas berhasil dihapus.');
+      await alert({ title: 'Kelas berhasil dihapus', message: data.message || 'Kelas yang dipilih berhasil dihapus.', type: 'success' });
     } catch (err: any) {
       setError(err.message || 'Gagal menghapus kelas.');
     } finally {

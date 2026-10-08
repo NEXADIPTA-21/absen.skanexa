@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { DialogProvider } from '@/components/dialog-provider';
 
 export const metadata: Metadata = {
   title: 'Absen SKANEXA - Presensi QR Code Siswa',
@@ -24,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="id">
       <body className="antialiased bg-slate-50 text-slate-900 select-none selection:bg-sky-200">
-        {children}
+        <DialogProvider>{children}</DialogProvider>
       </body>
     </html>
   );

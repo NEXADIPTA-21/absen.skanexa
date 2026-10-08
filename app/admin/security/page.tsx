@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Shield, Plus, KeyRound, CheckCircle2, XCircle, X } from 'lucide-react';
+import { useDialog } from '@/components/dialog-provider';
 
 interface Officer {
   id: string;
@@ -23,16 +24,17 @@ export default function AdminSecurityPage() {
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, alert } = useDialog();
 
   const fetchOfficers = async () => {
     try {
-      const res = await fetch('/api/admin/security', { method: 'GET', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+      const res = await fetch('/api/admin/security');
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Gagal mengambil data petugas.');
-      setOfficers(Array.isArray(data.officers) ? data.officers : []);
-    } catch (e: any) {
+      if (data.success) {
+        setOfficers(data.officers);
+      }
+    } catch (e) {
       console.error(e);
-      setError(e?.message || 'Gagal mengambil data petugas.');
     } finally {
       setLoading(false);
     }
@@ -73,10 +75,7 @@ export default function AdminSecurityPage() {
       if (!res.ok || !data.success) throw new Error(data.message || 'Gagal membuat akun.');
 
       setAddModalOpen(false);
-      setNameInput('');
-      setUsernameInput('');
-      setPasswordInput('security123');
-      await fetchOfficers();
+      fetchOfficers();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -86,7 +85,13 @@ export default function AdminSecurityPage() {
 
   const handleToggleStatus = async (officer: Officer) => {
     const nextStatus = officer.status === 'active' ? 'disabled' : 'active';
-    if (!confirm(`Ubah status petugas ${officer.name} menjadi ${nextStatus}?`)) return;
+    const ok = await confirm({
+      title: 'Ubah status petugas?',
+      message: `Status ${officer.name} akan diubah menjadi ${nextStatus === 'active' ? 'Aktif' : 'Nonaktif'}.`,
+      confirmText: 'Ya, ubah status',
+      type: 'confirm',
+    });
+    if (!ok) return;
 
     try {
       const res = await fetch(`/api/admin/security/${officer.id}`, {
@@ -96,7 +101,7 @@ export default function AdminSecurityPage() {
       });
       if (res.ok) fetchOfficers();
     } catch (e) {
-      alert('Koneksi bermasalah.');
+      await alert({ title: 'Koneksi bermasalah', message: 'Tidak dapat terhubung ke server. Silakan coba lagi.', type: 'error' });
     }
   };
 
@@ -120,7 +125,7 @@ export default function AdminSecurityPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Password petugas ${activeOfficer.name} berhasil diubah.`);
+        await alert({ title: 'Password berhasil diubah', message: `Password petugas ${activeOfficer.name} berhasil diperbarui.`, type: 'success' });
         setResetModalOpen(false);
       } else {
         setError(data.message || 'Gagal reset password.');

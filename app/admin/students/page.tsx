@@ -24,6 +24,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { Student, ClassItem } from '@/lib/types';
+import { useDialog } from '@/components/dialog-provider';
 
 export default function AdminStudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -60,6 +61,7 @@ export default function AdminStudentsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const { confirm, alert } = useDialog();
 
   const fetchClasses = async () => {
     try {
@@ -201,13 +203,13 @@ export default function AdminStudentsPage() {
   // Regenerate QR (PRD Section 12)
   const handleRegenerateQr = async () => {
     if (!currentStudent) return;
-    if (
-      !confirm(
-        `Regenerasi QR untuk ${currentStudent.name}?\nQR lama akan LANGSUNG TIDAK VALID!`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Regenerasi QR Code?',
+      message: `QR Code milik ${currentStudent.name} akan dibuat ulang. QR lama akan LANGSUNG TIDAK VALID.`,
+      confirmText: 'Ya, regenerasi QR',
+      type: 'confirm',
+    });
+    if (!ok) return;
 
     setRegenerating(true);
     try {
@@ -218,12 +220,12 @@ export default function AdminStudentsPage() {
       if (data.success) {
         setCurrentStudent((prev) => (prev ? { ...prev, qr_token: data.new_qr_token } : null));
         fetchStudents();
-        alert('QR Code baru berhasil digenerate! QR lama telah dinonaktifkan.');
+        await alert({ title: 'QR Code berhasil diperbarui', message: 'QR Code baru sudah aktif dan QR lama telah dinonaktifkan.', type: 'success' });
       } else {
-        alert(data.message || 'Gagal membuat QR baru.');
+        await alert({ title: 'Gagal membuat QR', message: data.message || 'QR Code baru tidak dapat dibuat.', type: 'error' });
       }
     } catch (e) {
-      alert('Koneksi bermasalah.');
+      await alert({ title: 'Koneksi bermasalah', message: 'Tidak dapat terhubung ke server. Silakan coba lagi.', type: 'error' });
     } finally {
       setRegenerating(false);
     }
@@ -251,7 +253,7 @@ export default function AdminStudentsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Password siswa ${currentStudent.name} berhasil diubah.`);
+        await alert({ title: 'Password berhasil diubah', message: `Password siswa ${currentStudent.name} berhasil diperbarui.`, type: 'success' });
         setResetPassModalOpen(false);
       } else {
         setError(data.message || 'Gagal mereset password.');
@@ -362,7 +364,7 @@ export default function AdminStudentsPage() {
       setSelectedIds([]);
       await fetchStudents();
       await fetchClasses();
-      alert(data.message || 'Import berhasil.');
+      await alert({ title: 'Import berhasil', message: data.message || 'Data siswa berhasil diimport.', type: 'success' });
     } catch (err: any) {
       setBulkErrors([err.message || 'Koneksi bermasalah.']);
     } finally {
@@ -372,7 +374,13 @@ export default function AdminStudentsPage() {
 
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
-    if (!confirm(`Hapus ${selectedIds.length} siswa yang dipilih?\n\nData akun, QR, dan riwayat presensi siswa yang dihapus juga akan ikut terhapus. Tindakan ini tidak dapat dibatalkan.`)) return;
+    const ok = await confirm({
+      title: `Hapus ${selectedIds.length} siswa?`,
+      message: 'Data akun, QR, dan riwayat presensi siswa yang dipilih juga akan ikut terhapus. Tindakan ini tidak dapat dibatalkan.',
+      confirmText: 'Ya, hapus siswa',
+      type: 'confirm',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await fetch('/api/admin/students', {
@@ -385,7 +393,7 @@ export default function AdminStudentsPage() {
       setSelectedIds([]);
       await fetchStudents();
       await fetchClasses();
-      alert(data.message || 'Siswa berhasil dihapus.');
+      await alert({ title: 'Siswa berhasil dihapus', message: data.message || 'Data siswa yang dipilih berhasil dihapus.', type: 'success' });
     } catch (err: any) {
       setError(err.message || 'Gagal menghapus siswa.');
     } finally {

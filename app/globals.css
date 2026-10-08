@@ -89,3 +89,70 @@ body {
     max-width: none;
   }
 }
+
+/* In-app dialogs: replace native browser alert()/confirm() with SKANEXA UI. */
+.sk-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  animation: sk-dialog-fade 160ms ease-out;
+}
+.sk-dialog-card {
+  position: relative;
+  width: min(100%, 430px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 28px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  text-align: center;
+  animation: sk-dialog-pop 180ms cubic-bezier(.2,.8,.2,1);
+}
+.sk-dialog-close {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: pointer;
+  transition: .15s ease;
+}
+.sk-dialog-close:hover { background: #e2e8f0; color: #0f172a; }
+.sk-dialog-icon-wrap { display: flex; justify-content: center; margin-bottom: 14px; }
+.sk-dialog-icon { width: 56px; height: 56px; stroke-width: 1.8; }
+.sk-dialog-icon-success { color: #059669; }
+.sk-dialog-icon-error { color: #e11d48; }
+.sk-dialog-icon-warning { color: #d97706; }
+.sk-dialog-icon-info { color: #0284c7; }
+.sk-dialog-title { margin: 0; color: #0f172a; font-size: 20px; line-height: 1.25; font-weight: 900; letter-spacing: -.02em; }
+.sk-dialog-message { margin: 10px auto 0; max-width: 350px; color: #64748b; font-size: 13px; line-height: 1.7; white-space: pre-line; }
+.sk-dialog-actions { display: flex; justify-content: center; gap: 10px; margin-top: 23px; }
+.sk-dialog-btn { min-width: 120px; border: 0; border-radius: 12px; padding: 11px 16px; font-size: 12px; font-weight: 800; cursor: pointer; transition: .15s ease; }
+.sk-dialog-btn-secondary { background: #f1f5f9; color: #334155; }
+.sk-dialog-btn-secondary:hover { background: #e2e8f0; }
+.sk-dialog-btn-primary { background: #0284c7; color: white; box-shadow: 0 7px 18px rgba(2, 132, 199, .2); }
+.sk-dialog-btn-primary:hover { background: #0369a1; transform: translateY(-1px); }
+.sk-dialog-btn-danger { background: #e11d48; color: white; box-shadow: 0 7px 18px rgba(225, 29, 72, .2); }
+.sk-dialog-btn-danger:hover { background: #be123c; transform: translateY(-1px); }
+@keyframes sk-dialog-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sk-dialog-pop { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 480px) {
+  .sk-dialog-backdrop { padding: 16px; align-items: flex-end; }
+  .sk-dialog-card { border-radius: 24px; padding: 25px 20px 20px; }
+  .sk-dialog-title { font-size: 18px; }
+  .sk-dialog-actions { flex-direction: column-reverse; }
+  .sk-dialog-btn { width: 100%; }
+}
