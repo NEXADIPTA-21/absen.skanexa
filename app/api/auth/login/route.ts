@@ -27,14 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Password akun belum dikonfigurasi dengan benar. Hubungi Administrator.' }, { status: 500 });
     }
 
-    let isValid = await verifyPassword(password, user.password_hash);
-
-    // Hanya akun demo bawaan yang memiliki fallback ini.
-    if (!isValid) {
-      if (user.username === 'admin' && password === 'admin123') isValid = true;
-      if (user.username === 'security01' && password === 'security123') isValid = true;
-      if (user.role === 'student' && password === 'student123') isValid = true;
-    }
+    const isValid = await verifyPassword(password, user.password_hash);
 
     if (!isValid) {
       return NextResponse.json({ success: false, message: 'Username atau password salah.' }, { status: 401 });
