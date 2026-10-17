@@ -1,21 +1,29 @@
+
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { UserRole } from './types';
 
 const SESSION_COOKIE_NAME = 'skanexa_session';
-const SALT_ROUNDS = 10;
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
-export async function hashPassword(plainPassword: string): Promise<string> {
-  return bcrypt.hash(plainPassword, SALT_ROUNDS);
+export async function hashPassword(
+  plainPassword: string
+): Promise<string> {
+  return bcrypt.hash(plainPassword, 10);
 }
 
 export async function verifyPassword(
   plainPassword: string,
   hash: string
 ): Promise<boolean> {
-  return bcrypt.compare(plainPassword, hash);
+  if (!hash || !hash.startsWith('$2')) return false;
+
+  try {
+    return await bcrypt.compare(plainPassword, hash);
+  } catch {
+    return false;
+  }
 }
 
 export interface SessionPayload {
@@ -32,7 +40,7 @@ function getSessionSecret(): string {
 
   if (!secret || secret.length < 32) {
     throw new Error(
-      'SESSION_SECRET wajib diatur dan minimal 32 karakter.'
+      'SESSION_SECRET belum dikonfigurasi dengan benar.'
     );
   }
 
@@ -48,19 +56,18 @@ function sign(value: string): string {
 export function createSessionCookie(
   payload: Omit<SessionPayload, 'exp'>
 ): void {
-  const cookieStore = cookies();
-
   const session: SessionPayload = {
     ...payload,
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE,
   };
 
-  const encoded = Buffer.from(JSON.stringify(session))
-    .toString('base64url');
+  const encoded = Buffer.from(
+    JSON.stringify(session)
+  ).toString('base64url');
 
   const token = `${encoded}.${sign(encoded)}`;
 
-  cookieStore.set(SESSION_COOKIE_NAME, token, {
+  cookies().set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
@@ -72,17 +79,16 @@ export function createSessionCookie(
 export function getSession(): SessionPayload | null {
   try {
     const token = cookies().get(SESSION_COOKIE_NAME)?.value;
-
     if (!token) return null;
 
     const parts = token.split('.');
     if (parts.length !== 2) return null;
 
     const [encoded, signature] = parts;
-    const expectedSignature = sign(encoded);
+    const expected = sign(encoded);
 
     const actualBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
+    const expectedBuffer = Buffer.from(expected);
 
     if (
       actualBuffer.length !== expectedBuffer.length ||
@@ -91,26 +97,22 @@ export function getSession(): SessionPayload | null {
       return null;
     }
 
-    const decoded = Buffer.from(encoded, 'base64url').toString('utf8');
-    const parsed = JSON.parse(decoded) as SessionPayload;
+    const session = JSON.parse(
+      Buffer.from(encoded, 'base64url').toString('utf8')
+    ) as SessionPayload;
 
     if (
-      !parsed.userId ||
-      !parsed.username ||
-      !parsed.role ||
-      !Number.isFinite(parsed.exp) ||
-      parsed.exp <= Math.floor(Date.now() / 1000)
+      typeof session.userId !== 'string' ||
+      !session.userId ||
+      typeof session.username !== 'string' ||
+      !Number.isFinite(session.exp) ||
+      session.exp <= Math.floor(Date.now() / 1000) ||
+      !['admin', 'security', 'student'].includes(session.role)
     ) {
       return null;
     }
 
-    const allowedRoles = ['admin', 'security', 'student'];
-
-    if (!allowedRoles.includes(parsed.role)) {
-      return null;
-    }
-
-    return parsed;
+    return session;
   } catch {
     return null;
   }
@@ -125,4 +127,3 @@ export function clearSessionCookie(): void {
     maxAge: 0,
   });
 }
-```
